@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Log Anomaly Detector</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #080b0f;
+  --bg2:      #0d1117;
+  --bg3:      #111820;
+  --border:   rgba(255,255,255,0.06);
+  --border2:  rgba(255,255,255,0.12);
+  --text:     #c9d1d9;
+  --muted:    #4a5568;
+  --high:     #ff4d4d;
+  --high-bg:  rgba(255,77,77,0.08);
+  --high-bd:  rgba(255,77,77,0.2);
+  --med:      #f59e0b;
+  --med-bg:   rgba(245,158,11,0.08);
+  --med-bd:   rgba(245,158,11,0.2);
+  --low:      #10b981;
+  --low-bg:   rgba(16,185,129,0.08);
+  --low-bd:   rgba(16,185,129,0.2);
+  --accent:   #00d4ff;
+  --accent-bg:rgba(0,212,255,0.06);
+  --mono:     'JetBrains Mono', monospace;
+  --display:  'Syne', sans-serif;
+}
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+/* Scanline overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.03) 2px,
+    rgba(0,0,0,0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 1000;
+}
+
+/* ── LAYOUT ─────────────────────────────────────────────────────── */
+.shell {
+  display: grid;
+  grid-template-rows: 56px 1fr;
+  grid-template-columns: 220px 1fr;
+  height: 100vh;
+}
+
+/* ── TOPBAR ─────────────────────────────────────────────────────── */
+.topbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  position: relative;
+  z-index: 10;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.logo {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo-icon {
+  width: 28px; height: 28px;
+  background: var(--accent);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.logo-icon svg { width: 16px; height: 16px; }
+
+.live-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--low);
+  border: 1px solid var(--low-bd);
+  background: var(--low-bg);
+  padding: 3px 10px;
+  border-radius: 100px;
+  letter-spacing: 0.08em;
+}
+
+.live-dot {
+  width: 5px; height: 5px;
+  background: var(--low);
+  border-radius: 50%;
+  animation: blink 1.4s ease-in-out infinite;
+}
+
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.clock { font-weight: 500; color: var(--text); }
+
+/* ── SIDEBAR ────────────────────────────────────────────────────── */
+.sidebar {
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.nav-section {
+  padding: 0 16px;
+  margin-bottom: 4px;
+}
+
+.nav-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  text-transform: uppercase;
+  padding: 12px 8px 6px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+
+.nav-item:hover { background: var(--bg3); color: var(--text); }
+
+.nav-item.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: rgba(0,212,255,0.15);
+}
+
+.nav-item svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+.nav-count {
+  margin-left: auto;
+  font-size: 10px;
+  background: var(--high-bg);
+  color: var(--high);
+  border: 1px solid var(--high-bd);
+  padding: 1px 6px;
+  border-radius: 100px;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.conn-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.conn-dot {
+  width: 6px; height: 6px;
+  background: var(--low);
+  border-radius: 50%;
+  box-shadow: 0 0 6px var(--low);
+}
+
+/* ── MAIN ───────────────────────────────────────────────────────── */
+.main {
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── STAT ROW ───────────────────────────────────────────────────── */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.stat-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.stat-card:hover { border-color: var(--border2); }
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+
+.stat-card.red::before   { background: var(--high); }
+.stat-card.amber::before { background: var(--med); }
+.stat-card.green::before { background: var(--low); }
+.stat-card.blue::before  { background: var(--accent); }
+
+.stat-label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  font-family: var(--display);
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+.stat-card.red   .stat-value { color: var(--high); }
+.stat-card.amber .stat-value { color: var(--med); }
+.stat-card.green .stat-value { color: var(--low); }
+.stat-card.blue  .stat-value { color: var(--accent); }
+
+.stat-sub {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* ── GRID ───────────────────────────────────────────────────────── */
+.content-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 16px;
+  align-items: start;
+}
+
+/* ── PANEL ──────────────────────────────────────────────────────── */
+.panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-title {
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.2px;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.filter-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.06em;
+}
+
+.filter-btn:hover { border-color: var(--border2); color: var(--text); }
+.filter-btn.active { background: var(--accent-bg); color: var(--accent); border-color: rgba(0,212,255,0.25); }
+
+/* ── ALERT LIST ─────────────────────────────────────────────────── */
+.alert-list {
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.alert-list::-webkit-scrollbar { width: 4px; }
+.alert-list::-webkit-scrollbar-track { background: transparent; }
+.alert-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.alert-item {
+  display: grid;
+  grid-template-columns: 3px 1fr;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+  cursor: pointer;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.alert-item:hover { background: var(--bg3); }
+.alert-item:last-child { border-bottom: none; }
+
+.alert-stripe { border-radius: 0; }
+.alert-item.high .alert-stripe { background: var(--high); }
+.alert-item.medium .alert-stripe { background: var(--med); }
+.alert-item.low .alert-stripe { background: var(--low); }
+
+.alert-body { padding: 12px 16px; }
+
+.alert-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.sev-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.high .sev-badge   { background: var(--high-bg); color: var(--high); border: 1px solid var(--high-bd); }
+.medium .sev-badge { background: var(--med-bg);  color: var(--med);  border: 1px solid var(--med-bd); }
+.low .sev-badge    { background: var(--low-bg);  color: var(--low);  border: 1px solid var(--low-bd); }
+
+.alert-type {
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+}
+
+.alert-time {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.alert-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.alert-meta span { color: var(--accent); }
+
+.alert-explanation {
+  font-size: 11px;
+  color: var(--text);
+  line-height: 1.55;
+  padding: 8px 10px;
+  background: var(--bg3);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  margin-top: 6px;
+}
+
+.ai-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.1em;
+  margin-bottom: 4px;
+}
+
+/* ── RIGHT PANEL ────────────────────────────────────────────────── */
+.right-col { display: flex; flex-direction: column; gap: 16px; }
+
+/* ── ACTIVITY CHART ─────────────────────────────────────────────── */
+.chart-area {
+  padding: 16px 18px;
+  height: 140px;
+  position: relative;
+}
+
+.chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 90px;
+}
+
+.bar-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.bar {
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  transition: height 0.4s ease;
+  min-height: 2px;
+}
+
+.bar.red   { background: var(--high); opacity: 0.8; }
+.bar.amber { background: var(--med);  opacity: 0.8; }
+.bar.green { background: var(--low);  opacity: 0.8; }
+
+.bar-lbl {
+  font-size: 8px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.legend-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+}
+
+/* ── GEO / TOP IPs ──────────────────────────────────────────────── */
+.ip-list { padding: 8px 0; }
+
+.ip-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+
+.ip-item:hover { background: var(--bg3); }
+.ip-item:last-child { border-bottom: none; }
+
+.ip-rank {
+  font-size: 10px;
+  color: var(--muted);
+  width: 14px;
+  text-align: center;
+}
+
+.ip-addr {
+  font-size: 11px;
+  color: var(--accent);
+  flex: 1;
+}
+
+.ip-bar-wrap {
+  flex: 1;
+  height: 4px;
+  background: var(--bg3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.ip-bar {
+  height: 100%;
+  background: var(--high);
+  border-radius: 2px;
+}
+
+.ip-count {
+  font-size: 10px;
+  color: var(--text);
+  width: 24px;
+  text-align: right;
+}
+
+/* ── LOG STREAM ─────────────────────────────────────────────────── */
+.log-stream {
+  font-size: 10px;
+  font-family: var(--mono);
+  padding: 12px 16px;
+  max-height: 160px;
+  overflow-y: auto;
+  line-height: 1.7;
+}
+
+.log-stream::-webkit-scrollbar { width: 3px; }
+.log-stream::-webkit-scrollbar-thumb { background: var(--border2); }
+
+.log-line { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-line .ts  { color: var(--muted); }
+.log-line .flag { color: var(--high); font-weight: 700; }
+.log-line .ok   { color: var(--low); }
+.log-line .warn { color: var(--med); }
+.log-line .ip   { color: var(--accent); }
+
+@keyframes fadeRow { from{opacity:0} to{opacity:1} }
+.log-line { animation: fadeRow 0.2s ease; }
+
+/* ── RESPONSIVE ─────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .content-grid { grid-template-columns: 1fr; }
+  .stat-row { grid-template-columns: repeat(2,1fr); }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="#080b0f" stroke-width="1.8" stroke-linecap="round">
+            <path d="M8 2L14 5v6l-6 3L2 11V5l6-3z"/>
+            <path d="M8 8l3-1.5M8 8v4M8 8L5 6.5"/>
+          </svg>
+        </div>
+        AI Anomaly Detector
+      </div>
+      <div class="live-badge"><span class="live-dot"></span>LIVE</div>
+    </div>
+    <div class="topbar-right">
+      <span>Network / Firewall · IDS</span>
+      <span class="clock" id="clock">--:--:--</span>
+    </div>
+  </header>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="nav-section">
+      <div class="nav-label">Monitor</div>
+      <div class="nav-item active">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 8h6M5 5h3M5 11h4"/></svg>
+        Live Alerts
+        <span class="nav-count" id="unread-count">0</span>
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><polyline points="2,11 5,7 8,9 11,5 14,8"/></svg>
+        Activity
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>
+        History
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Analyse</div>
+      <div class="nav-item">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="6" r="4"/><path d="M11 11l3 3"/></svg>
+        IP Lookup
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M4 8h8M6 12h4"/></svg>
+        Log Search
+      </div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="conn-status">
+        <span class="conn-dot"></span>
+        <span>SSE stream connected</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- STATS -->
+    <div class="stat-row">
+      <div class="stat-card red">
+        <div class="stat-label">High Severity</div>
+        <div class="stat-value" id="stat-high">0</div>
+        <div class="stat-sub">last 60 min</div>
+      </div>
+      <div class="stat-card amber">
+        <div class="stat-label">Medium Severity</div>
+        <div class="stat-value" id="stat-med">0</div>
+        <div class="stat-sub">last 60 min</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-label">Low Severity</div>
+        <div class="stat-value" id="stat-low">0</div>
+        <div class="stat-sub">last 60 min</div>
+      </div>
+      <div class="stat-card blue">
+        <div class="stat-label">Events / min</div>
+        <div class="stat-value" id="stat-rate">0</div>
+        <div class="stat-sub">avg ingestion rate</div>
+      </div>
+    </div>
+
+    <!-- CONTENT GRID -->
+    <div class="content-grid">
+
+      <!-- ALERTS PANEL -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Live Alert Feed</span>
+          <div class="panel-actions">
+            <button class="filter-btn active" onclick="setFilter('all',this)">ALL</button>
+            <button class="filter-btn" onclick="setFilter('high',this)">HIGH</button>
+            <button class="filter-btn" onclick="setFilter('medium',this)">MED</button>
+            <button class="filter-btn" onclick="setFilter('low',this)">LOW</button>
+          </div>
+        </div>
+        <div class="alert-list" id="alert-list">
+          <!-- populated by JS -->
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN -->
+      <div class="right-col">
+
+        <!-- ACTIVITY CHART -->
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Alert Activity</span>
+            <span style="font-size:10px;color:var(--muted)">last 12 min</span>
+          </div>
+          <div class="chart-area">
+            <div class="chart-bars" id="chart-bars"></div>
+            <div class="chart-legend">
+              <div class="legend-item"><div class="legend-dot" style="background:var(--high)"></div>High</div>
+              <div class="legend-item"><div class="legend-dot" style="background:var(--med)"></div>Medium</div>
+              <div class="legend-item"><div class="legend-dot" style="background:var(--low)"></div>Low</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TOP SOURCE IPs -->
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Top Source IPs</span>
+          </div>
+          <div class="ip-list" id="ip-list"></div>
+        </div>
+
+        <!-- RAW LOG STREAM -->
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Raw Log Stream</span>
+            <span style="font-size:10px;color:var(--low)">● ingesting</span>
+          </div>
+          <div class="log-stream" id="log-stream"></div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+let allAlerts = [];
+let filter = 'all';
+let statsH = 0, statsM = 0, statsL = 0, statsRate = 0;
+let chartData = Array(12).fill(null).map(() => ({h:0,m:0,l:0}));
+let ipCounts = {};
+let _recentTimes = [];
+
+/* ── CLOCK ─────────────────────────────────────────────────────── */
+function updateClock() {
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+/* ── DATA INGEST ────────────────────────────────────────────────── */
+function ingestData(a) {
+  // Normalise time to Date object (SSE sends ISO string)
+  if (!(a.time instanceof Date)) a.time = new Date(a.time);
+
+  // If we already have this alert (explanation update), replace in-place
+  const idx = allAlerts.findIndex(x => x.id === a.id);
+  if (idx !== -1) {
+    allAlerts[idx] = a;
+    renderAlerts();
+    return;
+  }
+
+  // New alert
+  allAlerts.unshift(a);
+  if (allAlerts.length > 200) allAlerts.pop();
+
+  if (a.sev === 'high')   statsH++;
+  if (a.sev === 'medium') statsM++;
+  if (a.sev === 'low')    statsL++;
+
+  ipCounts[a.srcIp] = (ipCounts[a.srcIp] || 0) + 1;
+
+  const slot = chartData[chartData.length - 1];
+  if (a.sev === 'high')   slot.h++;
+  if (a.sev === 'medium') slot.m++;
+  if (a.sev === 'low')    slot.l++;
+
+  _recentTimes.push(Date.now());
+  _recentTimes = _recentTimes.filter(t => Date.now() - t < 60000);
+  statsRate = _recentTimes.length;
+
+  renderAlerts();
+  updateStats();
+  renderChart();
+  renderIPs();
+  pushLog(a);
+}
+
+/* ── RENDER ALERT ───────────────────────────────────────────────── */
+function timeAgo(d) {
+  const s = Math.floor((Date.now() - d) / 1000);
+  if (s < 5)  return 'just now';
+  if (s < 60) return s + 's ago';
+  return Math.floor(s/60) + 'm ago';
+}
+
+function renderAlerts() {
+  const list = document.getElementById('alert-list');
+  const visible = filter === 'all' ? allAlerts : allAlerts.filter(a => a.sev === filter);
+  list.innerHTML = '';
+  visible.slice(0, 30).forEach(a => {
+    const el = document.createElement('div');
+    el.className = `alert-item ${a.sev}`;
+    el.innerHTML = `
+      <div class="alert-stripe"></div>
+      <div class="alert-body">
+        <div class="alert-top">
+          <span class="sev-badge">${a.sev}</span>
+          <span class="alert-type">${a.type}</span>
+          <span class="alert-time">${timeAgo(a.time)}</span>
+        </div>
+        <div class="alert-meta">
+          src <span>${a.srcIp}</span> → dst <span>${a.dstIp}</span> · port <span>${a.port}</span> · rule: <span>${a.rule}</span>
+        </div>
+        <div class="alert-explanation">
+          <div class="ai-tag">▸ AI ANALYSIS</div>
+          ${a.explain}
+        </div>
+      </div>`;
+    list.appendChild(el);
+  });
+}
+
+/* ── FILTER ─────────────────────────────────────────────────────── */
+function setFilter(f, btn) {
+  filter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderAlerts();
+}
+
+/* ── STATS ──────────────────────────────────────────────────────── */
+function updateStats() {
+  document.getElementById('stat-high').textContent = statsH;
+  document.getElementById('stat-med').textContent  = statsM;
+  document.getElementById('stat-low').textContent  = statsL;
+  document.getElementById('stat-rate').textContent = statsRate;
+  const total = allAlerts.length;
+  document.getElementById('unread-count').textContent = total > 99 ? '99+' : total;
+}
+
+/* ── CHART ──────────────────────────────────────────────────────── */
+function renderChart() {
+  const wrap = document.getElementById('chart-bars');
+  const maxVal = Math.max(1, ...chartData.map(d => d.h + d.m + d.l));
+  const H = 90;
+  wrap.innerHTML = '';
+  const now = new Date();
+  chartData.forEach((d, i) => {
+    const t = new Date(now - (11 - i) * 60000);
+    const lbl = t.getMinutes().toString().padStart(2,'0');
+    const hH = Math.round((d.h / maxVal) * H);
+    const mH = Math.round((d.m / maxVal) * H);
+    const lH = Math.round((d.l / maxVal) * H);
+    const col = document.createElement('div');
+    col.className = 'bar-wrap';
+    col.innerHTML = `
+      ${d.h ? `<div class="bar red"   style="height:${hH}px"></div>` : ''}
+      ${d.m ? `<div class="bar amber" style="height:${mH}px"></div>` : ''}
+      ${d.l ? `<div class="bar green" style="height:${lH}px"></div>` : ''}
+      <div class="bar-lbl">${i % 3 === 0 ? ':'+lbl : ''}</div>`;
+    wrap.appendChild(col);
+  });
+}
+
+/* ── IP LIST ────────────────────────────────────────────────────── */
+function renderIPs() {
+  const sorted = Object.entries(ipCounts).sort((a,b) => b[1]-a[1]).slice(0,5);
+  const max = sorted[0]?.[1] || 1;
+  const el = document.getElementById('ip-list');
+  el.innerHTML = sorted.map(([ip, cnt], i) => `
+    <div class="ip-item">
+      <span class="ip-rank">${i+1}</span>
+      <span class="ip-addr">${ip}</span>
+      <div class="ip-bar-wrap"><div class="ip-bar" style="width:${Math.round(cnt/max*100)}%"></div></div>
+      <span class="ip-count">${cnt}</span>
+    </div>`).join('');
+}
+
+/* ── LOG STREAM ─────────────────────────────────────────────────── */
+const RAW_TPLS = [
+  (a) => `<span class="ts">${ts()}</span> iptables: IN=eth0 SRC=<span class="ip">${a.srcIp}</span> DST=${a.dstIp} PROTO=TCP DPT=${a.port} <span class="flag">FLAGGED:${a.rule.toUpperCase()}</span>`,
+  (a) => `<span class="ts">${ts()}</span> snort: [1:1000001:1] <span class="warn">${a.type}</span> {TCP} <span class="ip">${a.srcIp}</span>:${Math.floor(Math.random()*60000)} -> ${a.dstIp}:${a.port}`,
+  (a) => `<span class="ts">${ts()}</span> iptables: IN=eth0 SRC=<span class="ip">${a.srcIp}</span> PROTO=ICMP <span class="ok">ACCEPT</span>`,
+];
+
+function ts() {
+  return new Date().toISOString().slice(11,23);
+}
+
+function pushLog(a) {
+  const stream = document.getElementById('log-stream');
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = RAW_TPLS[Math.floor(Math.random()*RAW_TPLS.length)](a);
+  stream.appendChild(line);
+  while (stream.children.length > 60) stream.removeChild(stream.firstChild);
+  stream.scrollTop = stream.scrollHeight;
+}
+
+/* ── CHART ROTATION ─────────────────────────────────────────────── */
+setInterval(() => {
+  chartData.shift();
+  chartData.push({h:0,m:0,l:0});
+  renderChart();
+}, 60000);
+
+// Refresh time labels on existing alerts every 15s
+setInterval(renderAlerts, 15000);
+
+/* ── BACKEND CONNECTION ──────────────────────────────────────────── */
+// Seed with existing alerts from DB on page load
+fetch('/alerts')
+  .then(r => r.json())
+  .then(rows => rows.reverse().forEach(ingestData))
+  .catch(() => {});
+
+// Live SSE stream
+const evtSource = new EventSource('/stream');
+evtSource.onmessage = (e) => ingestData(JSON.parse(e.data));
+evtSource.onerror = () => {
+  const dot  = document.querySelector('.conn-dot');
+  const label = document.querySelector('.conn-status span:last-child');
+  if (dot)   dot.style.background = 'var(--high)';
+  if (label) label.textContent = 'SSE disconnected';
+};
+</script>
+</body>
+</html>
