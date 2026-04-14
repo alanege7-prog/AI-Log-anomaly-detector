@@ -90,5 +90,17 @@ Blocker 2: Option A confirmed — file tail. Matches ALIGN.md decision 7. Exo is
 **Tests:** 13/13 passing (pytest)
 
 **Still pending:**
-- README (Hans owns per session close protocol)
 - End-to-end smoke test with real ANTHROPIC_API_KEY
+
+---
+
+### 2026-04-13 — Session close (Hans)
+
+**What was done:**
+- README.md written and added to project root
+- BLUEPRINT.md Phase 1 checklist: all 11 items ✅ Complete
+- Hans fixed async explanation bug in watcher.py (double SSE push → single push after explanation fetched)
+- Hans approved Exo's 30-second cooldown per (src_ip, rule) in watcher.py
+
+**Phase 1 status: COMPLETE**
+All features built, tested, documented. Project is ready for portfolio demo.

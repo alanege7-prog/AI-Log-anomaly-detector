@@ -67,7 +67,7 @@ ai-log-anomaly-detector/
 | Flask REST API | Endpoints: /stream (SSE), /alerts, /alerts/<id> | ✅ Complete |
 | Live dashboard | SSE-powered frontend showing real-time alerts | ✅ Complete |
 | Mock log generator | Script to generate realistic iptables/Snort events for demo | ✅ Complete |
-| README | Setup instructions, demo guide, architecture overview | ⬜ Not started |
+| README | Setup instructions, demo guide, architecture overview | ✅ Complete |
 
 > Status key: ⬜ Not started / 🔄 In progress / ✅ Complete / ⚠️ Blocked
 
