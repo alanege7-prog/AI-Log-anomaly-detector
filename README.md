@@ -56,12 +56,9 @@ The detection engine runs in a background thread and tails the log file continuo
 ## Screenshots
 
 > Dashboard — live alert feed with AI explanations
+<img width="1900" height="980" alt="Screenshot 2026-04-13 180708" src="https://github.com/user-attachments/assets/d7b61011-a008-472b-bdb3-62e59e79462d" />
 
-![Dashboard](docs/screenshots/dashboard.png)
-
-> Alert detail — severity badge, source/destination IPs, Claude analysis
-
-![Alert detail](docs/screenshots/alert-detail.png)
+<img width="1911" height="978" alt="Screenshot 2026-04-13 180811" src="https://github.com/user-attachments/assets/f5ca26bd-37ff-4ec7-93ad-57890d9220fe" />
 
 ---
 
